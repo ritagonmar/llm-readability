@@ -1,7 +1,8 @@
 # Files
-# data
-# results/variables
-# results/figures/tmp
+data
+results/variables
+results/figures/tmp
+results/figures/external
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
