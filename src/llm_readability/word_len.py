@@ -1,5 +1,6 @@
 # modified from repo llm-excess-vocab/scripts/02_preprocess_and_count_utils.py
 
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import pickle
@@ -8,8 +9,6 @@ from sklearn.feature_extraction.text import CountVectorizer
 
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-
-# TODO: maybe move to scripts, because this currently runs an analysis
 
 
 def load_data(start_year=2010, end_year=2024):
@@ -360,10 +359,10 @@ def cleanup_abstracts_inplace(df):
     )  # 270189
 
 
-def vectorize_abstracts(df, years, saving_path):
+def vectorize_abstracts(df, years, saving_path, token_pattern=r"\b[a-zA-Z]+\b"):
     vectorizer = CountVectorizer(
         lowercase=True,
-        token_pattern=r"\b[a-zA-Z]+\b",  # Only alphabetic words
+        token_pattern=token_pattern,  # Only alphabetic words
         # max_features=max_features,
         binary=False,
         dtype=np.int64,
@@ -639,132 +638,3 @@ def create_word_length_analysis_plots(results, figsize=(15, 12)):
 
     # plt.tight_layout()
     # return fig
-
-
-# def generate_word_length_report(results: Dict[str, Any]) -> str:
-#     """
-#     Generate a comprehensive text report of word length analysis.
-#     """
-#     corpus_stats = results['corpus_stats']
-#     years = results['years']
-
-#     report = f"""
-# WORD LENGTH ANALYSIS REPORT
-# ===========================
-
-# CORPUS OVERVIEW:
-# - Total words analyzed: {corpus_stats['total_words']:,}
-# - Unique words in vocabulary: {corpus_stats['unique_words']:,}
-# - Overall mean word length: {corpus_stats['mean_word_length']:.2f} characters
-# - Time period: {years[0]} - {years[-1]}
-
-# TEMPORAL TRENDS:
-# - Mean word length change: {results['mean_length'][-1] - results['mean_length'][0]:+.3f} characters
-# - Initial mean length ({years[0]}): {results['mean_length'][0]:.3f} characters
-# - Final mean length ({years[-1]}): {results['mean_length'][-1]:.3f} characters
-
-# DISTRIBUTION CHARACTERISTICS:
-# - Standard deviation range: {results['std_length'].min():.3f} - {results['std_length'].max():.3f}
-# - Median length range: {results['median_length'].min():.1f} - {results['median_length'].max():.1f} characters
-
-# TOP WORD LENGTHS BY VOCABULARY SIZE:
-# """
-
-#     # Add top word lengths by vocabulary size
-#     vocab_by_length = corpus_stats['vocabulary_size_by_length']
-#     top_lengths = sorted(vocab_by_length.items(), key=lambda x: x[1], reverse=True)[:10]
-
-#     for length, count in top_lengths:
-#         percentage = (count / corpus_stats['unique_words']) * 100
-#         report += f"- {length} characters: {count:,} words ({percentage:.1f}% of vocabulary)\n"
-
-#     return report
-
-
-# def run_complete_analysis(corpus_df: pd.DataFrame) -> Dict[str, Any]:
-#     """
-#     Run the complete word length analysis pipeline.
-
-#     Args:
-#         corpus_df: DataFrame with 'AbstractText' and 'Year' columns
-
-#     Returns:
-#         Dictionary containing all analysis results
-#     """
-#     print("Step 1: Vectorizing corpus...")
-#     X, words, years, counts, totals, df = vectorize_abstracts(corpus_df)
-
-#     print("Step 2: Computing word length statistics...")
-#     results = compute_word_length_statistics(df, years)
-
-#     print("Step 3: Generating visualizations...")
-#     fig = create_word_length_analysis_plots(results)
-
-#     print("Step 4: Generating report...")
-#     report = generate_word_length_report(results)
-
-#     # Store additional metadata
-#     results['vectorization_results'] = {
-#         'count_matrix': X,
-#         'words': words,
-#         'years': years,
-#         'counts': counts,
-#         'totals': totals,
-#         'df': df
-#     }
-
-#     results['report'] = report
-#     results['figure'] = fig
-
-#     return results
-
-##########################################################################
-
-
-if __name__ == "__main__":
-    from pathlib import Path
-    import time
-    from datetime import timedelta
-
-    # define paths
-    variables_path = Path("../../results/variables")
-    print(variables_path.resolve())
-    # berenslab_data_path = Path("/gpfs01/berens/data/data/pubmed_processed")
-    assert variables_path.exists(), "The path does not exist"
-    # assert berenslab_data_path.exists(), "The path does not exist"
-
-    # # load data
-    # start = time.time()
-    # df = load_data(start_year=2010, end_year=2025)
-    # end = time.time()
-    # runtime_total = end - start
-    # print("Loading data runtime: ", str(timedelta(seconds=runtime_total)))
-
-    # # clean up abstracts
-    # start = time.time()
-    # cleanup_abstracts_inplace(df)
-    # end = time.time()
-    # runtime_total = end - start
-    # print("Cleaning abstracts runtime: ", str(timedelta(seconds=runtime_total)))
-
-    # # compute yearly counts
-    # start = time.time()
-    years = np.arange(2010, 2026)
-    # yearly_counts_df = vectorize_abstracts(df, years, variables_path)
-    # end = time.time()
-    # runtime_total = end - start
-    # print("Yearly counts runtime: ", str(timedelta(seconds=runtime_total)))
-
-    # compute word length statisctics
-    ## load yearly counts df
-    yearly_counts_df = pd.read_parquet(
-        variables_path / "yearly-counts.parquet.gzip",
-        engine="pyarrow",
-    )
-    start = time.time()
-    results = compute_word_length_statistics(
-        yearly_counts_df, saving_path=variables_path, years=years
-    )
-    end = time.time()
-    runtime_total = end - start
-    print("Word length statistics runtime: ", str(timedelta(seconds=runtime_total)))
