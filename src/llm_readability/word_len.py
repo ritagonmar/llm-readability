@@ -411,13 +411,17 @@ def vectorize_abstracts(df, years, saving_path, token_pattern=r"\b[a-zA-Z]+\b"):
 ############### CLAUDE CODE ###################################################
 
 
-def compute_word_length_statistics(yearly_counts_df, saving_path, years=None):
+def compute_word_length_statistics(
+    yearly_counts_df, saving_path, years=None, length_threshold=0
+):
     """
     Efficiently compute word length statistics from word counts dataframe.
 
     Args:
         df: DataFrame with 'word' column and year columns containing counts
         years: Array of years corresponding to the year columns
+        length_threshold: int, default=0
+            Only words with length greater than that value are used for the analysis.
 
     Returns:
         Dictionary containing word length statistics and analysis results
@@ -431,20 +435,17 @@ def compute_word_length_statistics(yearly_counts_df, saving_path, years=None):
     # Compute word lengths vectorized
     word_lengths = word_counts_df["word"].str.len().values
 
+    # length threshold
+    if length_threshold:
+        mask = word_lengths > length_threshold
+        print(f"{np.sum(mask)} out of {word_counts_df.shape[0]} words kept")
+        print(f"{word_counts_df.shape[0]-np.sum(mask)} words excluded")
+        word_counts_df = word_counts_df[mask]
+        word_lengths = word_lengths[mask]
+
     # Extract count matrix (all year columns)
     year_columns = [str(year) for year in years]  # they are not str!!
-    print(year_columns)
-    print(type(year_columns))
-    print(type(year_columns[0]))
-    print(years)
-    print(type(years))
-    print(type(years[0]))
-    print(word_counts_df.columns)
-    print(word_counts_df.columns[-1])
     count_matrix = word_counts_df[year_columns].values
-
-    # Precompute word length categories for efficiency
-    length_categories = np.arange(1, word_lengths.max() + 1)
 
     # Initialize results storage
     results = {
@@ -463,7 +464,7 @@ def compute_word_length_statistics(yearly_counts_df, saving_path, years=None):
     print("Computing word length statistics...")
 
     # Compute statistics for each year efficiently
-    for i, year in tqdm(enumerate(years)):  # ENH: move tqdm inside enumerate
+    for i, year in enumerate(tqdm(years)):
         year_counts = count_matrix[:, i]
 
         # # Skip if no words for this year
@@ -492,19 +493,13 @@ def compute_word_length_statistics(yearly_counts_df, saving_path, years=None):
                 zip(percentiles, year_percentiles)
             )
 
-        # # Count words by length category  --> INEFFICIENT WAY
-        # length_counts = np.zeros(len(length_categories))
-        # for j, length in enumerate(length_categories):
-        #     mask = word_lengths == length
-        #     length_counts[j] = year_counts[mask].sum()
-
         # Count words by length category (vectorized)
         length_counts = np.bincount(
             word_lengths, weights=year_counts
-        )  # , minlength=length_categories.max()+1)[1:]
+        )  # NOTE: np.bincount will give you a count for each int, including 0, even if there is no word with len=0
 
         results["length_category_counts"][str(year)] = {
-            "lengths": length_categories,
+            "lengths": np.arange(word_lengths.max() + 1),
             "counts": length_counts,
             "proportions": (
                 length_counts / total_words if total_words > 0 else length_counts
@@ -528,113 +523,3 @@ def compute_word_length_statistics(yearly_counts_df, saving_path, years=None):
     f.close()
 
     return results
-
-
-def create_word_length_analysis_plots(results, figsize=(15, 12)):
-    """
-    Create comprehensive visualization of word length analysis.
-    """
-    fig, axes = plt.subplots(2, 3, figsize=figsize)
-    fig.suptitle("Word Length Analysis Over Time", fontsize=16, fontweight="bold")
-
-    years = results["years"]
-
-    # 1. Mean word length over time
-    axes[0, 0].plot(years, results["mean_length"], marker="o", linewidth=2)
-    axes[0, 0].set_title("Mean Word Length Over Time")
-    axes[0, 0].set_xlabel("Year")
-    axes[0, 0].set_ylabel("Mean Length (characters)")
-    axes[0, 0].grid(True, alpha=0.3)
-
-    # 2. Distribution statistics over time
-    axes[0, 1].plot(years, results["mean_length"], label="Mean", marker="o")
-    axes[0, 1].plot(years, results["median_length"], label="Median", marker="s")
-    axes[0, 1].fill_between(
-        years,
-        results["mean_length"] - results["std_length"],
-        results["mean_length"] + results["std_length"],
-        alpha=0.3,
-        label="±1 STD",
-    )
-    axes[0, 1].set_title("Word Length Distribution Stats")
-    axes[0, 1].set_xlabel("Year")
-    axes[0, 1].set_ylabel("Length (characters)")
-    axes[0, 1].legend()
-    axes[0, 1].grid(True, alpha=0.3)
-
-    # 3. Heatmap of word length proportions over time
-    # Create matrix for heatmap
-    max_length = max(results["length_category_counts"][str(years[0])]["lengths"])
-    heatmap_data = np.zeros(
-        (min(20, max_length), len(years))
-    )  # Limit to first 20 lengths
-
-    for i, year in enumerate(years):
-        year_data = results["length_category_counts"][str(year)]
-        lengths = year_data["lengths"][:20]  # First 20 lengths
-        proportions = year_data["proportions"][:20]
-        heatmap_data[: len(lengths), i] = proportions
-
-    im = axes[0, 2].imshow(heatmap_data, aspect="auto", cmap="viridis")
-    axes[0, 2].set_title("Word Length Proportions Heatmap")
-    axes[0, 2].set_xlabel("Year")
-    axes[0, 2].set_ylabel("Word Length")
-    axes[0, 2].set_yticks(range(0, min(20, max_length), 2))
-    axes[0, 2].set_yticklabels(range(1, min(21, max_length + 1), 2))
-    axes[0, 2].set_xticks(range(0, len(years), 2))
-    axes[0, 2].set_xticklabels(years[::2], rotation=45)
-    plt.colorbar(im, ax=axes[0, 2])
-
-    # 4. Word length distribution for first and last years
-    first_year, last_year = str(years[0]), str(years[-1])
-    first_data = results["length_category_counts"][first_year]
-    last_data = results["length_category_counts"][last_year]
-
-    axes[1, 0].bar(
-        first_data["lengths"][:15],
-        first_data["proportions"][:15],
-        alpha=0.7,
-        label=first_year,
-        width=0.4,
-    )
-    axes[1, 0].bar(
-        last_data["lengths"][:15] + 0.4,
-        last_data["proportions"][:15],
-        alpha=0.7,
-        label=last_year,
-        width=0.4,
-    )
-    axes[1, 0].set_title(f"Word Length Distribution: {first_year} vs {last_year}")
-    axes[1, 0].set_xlabel("Word Length")
-    axes[1, 0].set_ylabel("Proportion")
-    axes[1, 0].legend()
-    axes[1, 0].grid(True, alpha=0.3)
-
-    # 5. Percentile evolution
-    percentiles_data = results["length_percentiles"]
-    p25_values = [percentiles_data[str(year)][25] for year in years]
-    p75_values = [percentiles_data[str(year)][75] for year in years]
-    p95_values = [percentiles_data[str(year)][95] for year in years]
-
-    axes[1, 1].plot(years, p25_values, label="25th percentile", marker="o")
-    axes[1, 1].plot(years, p75_values, label="75th percentile", marker="s")
-    axes[1, 1].plot(years, p95_values, label="95th percentile", marker="^")
-    axes[1, 1].set_title("Word Length Percentiles Over Time")
-    axes[1, 1].set_xlabel("Year")
-    axes[1, 1].set_ylabel("Length (characters)")
-    axes[1, 1].legend()
-    axes[1, 1].grid(True, alpha=0.3)
-
-    # # 6. Vocabulary size by length category
-    # vocab_by_length = results["corpus_stats"]["vocabulary_size_by_length"]
-    # lengths = list(vocab_by_length.keys())[:20]  # First 20 lengths
-    # counts = [vocab_by_length[length] for length in lengths]
-
-    # axes[1, 2].bar(lengths, counts, alpha=0.7)
-    # axes[1, 2].set_title("Vocabulary Size by Word Length")
-    # axes[1, 2].set_xlabel("Word Length")
-    # axes[1, 2].set_ylabel("Number of Unique Words")
-    # axes[1, 2].grid(True, alpha=0.3)
-
-    # plt.tight_layout()
-    # return fig
